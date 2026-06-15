@@ -1,0 +1,8 @@
+manifest_version = 3
+name = "fastly-x402-http-demo"
+description = "x402 HTTP payment gating on Fastly Compute."
+authors = ["shaun.flagg@gmail.com"]
+language = "javascript"
+
+[scripts]
+build = "npm run build"

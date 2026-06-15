@@ -1,0 +1,39 @@
+{
+  "name": "fastly-x402-http-demo",
+  "version": "1.0.0",
+  "description": "HTTP payment gating using x402 on Fastly Compute",
+  "private": false,
+  "type": "module",
+  "scripts": {
+    "build": "mkdir -p bin && js-compute-runtime --env SERVER_ADDRESS,CLIENT_TEST_PK,X402_FACILITATOR_URL,EVM_RPC_URL src/index.ts bin/main.wasm",
+    "start": "fastly compute serve",
+    "dev": "fastly compute serve",
+    "deploy": "fastly compute publish --accept-defaults",
+    "typecheck": "tsc --noEmit",
+    "wallets": "node scripts/generate-wallets.mjs",
+    "balance": "node scripts/check-balance.mjs",
+    "decode:payment-required": "node scripts/decode-payment-required.mjs"
+  },
+  "keywords": [
+    "fastly",
+    "compute",
+    "x402",
+    "payments",
+    "agentic-commerce",
+    "base-sepolia"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@fastly/js-compute": "^3.42.1",
+    "@x402/core": "^2.14.0",
+    "@x402/evm": "^2.14.0",
+    "@x402/fetch": "^2.14.0",
+    "@x402/hono": "^2.14.0",
+    "hono": "^4.12.25",
+    "url": "^0.11.4",
+    "viem": "^2.52.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Fastly build output
+bin/
+pkg/
+
+# Local secrets and env
+.env
+.env.*
+!.env.example
+cdp-api-key.json
+
+# OS/editor noise
+.DS_Store
+*.log
+.vscode/
+.idea/
