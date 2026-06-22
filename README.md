@@ -1,24 +1,31 @@
 # Fastly Compute x402 HTTP Payment Demo
 
-A GitHub-ready Fastly Compute demo that gates an HTTP endpoint behind an x402 payment.
+Fastly Compute demo that protects an HTTP endpoint with an x402 payment challenge.
 
-The demo protects `GET /protected-route` behind a `$0.001` payment on Base Sepolia. The browser calls `POST /api/fetch-protected-route`; the Compute app uses a configured test payer key to satisfy the x402 challenge and then returns the protected content.
+`GET /protected-route` costs `$0.001` on Base Sepolia. A direct request returns `402 Payment Required`. The paid flow calls `POST /api/fetch-protected-route`, signs the x402 challenge with a configured test payer key, retries the protected request, and returns the protected response.
 
-## What it demonstrates
+## What this demonstrates
 
-- Fastly Compute serving a protected HTTP endpoint.
+- Fastly Compute serving an HTTP resource.
 - x402 `402 Payment Required` challenge generation.
-- Automatic signed retry with `PAYMENT-SIGNATURE` through `@x402/fetch`.
-- Server-side payment verification through the x402 facilitator.
-- A simple browser UI with no external UI framework.
+- Signed payment retry through `@x402/fetch`.
+- Server-side payment verification through an x402 facilitator.
+- A browser UI that exercises the same paid endpoint as the curl test.
+
+## Verification status
+
+Both paths have been validated:
+
+- curl against `POST /api/fetch-protected-route`
+- browser UI at `/`
+
+Use curl as the easiest way to inspect the raw 402 challenge and paid response. Use the UI for demos.
 
 ## Project layout
 
 ```txt
 .
-├── .github/workflows/ci.yml
 ├── .env.example
-├── .gitignore
 ├── .npmrc
 ├── fastly.toml
 ├── package.json
@@ -26,75 +33,112 @@ The demo protects `GET /protected-route` behind a `$0.001` payment on Base Sepol
 │   ├── check-balance.mjs
 │   ├── decode-payment-required.mjs
 │   └── generate-wallets.mjs
-├── src/index.ts
+├── src/
+│   ├── entry.ts
+│   ├── index.ts
+│   └── polyfills.ts
 └── tsconfig.json
 ```
+
+`src/entry.ts` is the Compute entrypoint. It loads runtime compatibility shims before importing the app.
+
+`src/polyfills.ts` provides the small compatibility shim needed by npm dependencies that expect `Buffer`. This does not make Fastly Compute a Node.js runtime. The service still runs on Fastly Compute, and the shim only supplies the specific global expected by the x402 dependency path.
+
+`src/index.ts` contains the Hono app, routes, x402 middleware, and browser UI assets.
 
 ## Prerequisites
 
 - Node.js 20+
 - Fastly CLI
-- Optional: GitHub CLI for pushing the repo quickly
-- Optional: CDP CLI for funding the test payer wallet from the command line
+- Optional: CDP CLI for requesting Base Sepolia testnet funds
+
+CDP means Coinbase Developer Platform. In this demo, the CDP CLI is only used to request testnet USDC from a faucet. It is not part of Fastly, and it does not deploy or run the Compute service.
 
 ## Wallet model
 
 Use two test wallets:
 
-| Wallet | Purpose | Goes in app config? | Needs funds? |
+| Wallet | Purpose | App config | Needs funds? |
 | --- | --- | --- | --- |
-| Receiver / merchant | Receives the x402 payment | Address only: `SERVER_ADDRESS` | No |
-| Payer / agent | Signs and pays the x402 challenge | Private key: `CLIENT_TEST_PK` | Yes, Base Sepolia USDC |
+| Receiver / merchant | Receives payment | Address only: `SERVER_ADDRESS` | No |
+| Payer / agent | Signs and pays the challenge | Private key: `CLIENT_TEST_PK` | Yes, Base Sepolia USDC |
 
-Do not use a real production wallet. Do not commit `.env`, `cdp-api-key.json`, or any private key.
+Do not use production wallets. Do not commit `.env`, `cdp-api-key.json`, or private keys.
 
-## Quick start
-
-Install dependencies:
+## Install
 
 ```sh
 npm install --registry=https://registry.npmjs.org/
 ```
 
-Generate two test wallets:
+## Create payer and receiver wallets
+
+Generate test wallets:
 
 ```sh
 npm run wallets
 ```
 
-Copy the output into `.env`:
+Or run the wallet generation directly:
+
+```sh
+node --input-type=module <<'NODE'
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+
+const receiverPk = generatePrivateKey();
+const receiver = privateKeyToAccount(receiverPk);
+
+const payerPk = generatePrivateKey();
+const payer = privateKeyToAccount(payerPk);
+
+console.log("\n# Receiver / merchant wallet");
+console.log("SERVER_ADDRESS=" + receiver.address);
+console.log("# receiver private key, save only if you care about recovering test funds:");
+console.log("# " + receiverPk);
+
+console.log("\n# Payer / agent wallet");
+console.log("PAYER_ADDRESS=" + payer.address);
+console.log("CLIENT_TEST_PK=" + payerPk);
+NODE
+```
+
+Create `.env`:
 
 ```sh
 cp .env.example .env
 ```
 
-Example `.env` shape:
+Set these values:
 
 ```env
 SERVER_ADDRESS=0xReceiverWalletAddress
-CLIENT_TEST_PK=0xFundedPayerPrivateKey
+CLIENT_TEST_PK=0xPayerPrivateKey
 X402_FACILITATOR_URL=https://www.x402.org/facilitator
 EVM_RPC_URL=https://sepolia.base.org
 ```
 
-Only fund the payer address. The receiver private key is not required by the app.
+Only fund the payer address. The app does not need the receiver private key.
 
 ## Fund the payer wallet
 
-The payer wallet must have Base Sepolia USDC. The demo price is `$0.001`, so 1 test USDC is plenty.
+The payer wallet needs Base Sepolia USDC. The demo price is `$0.001`, so 1 test USDC is enough.
 
-Using CDP CLI:
+Authenticate CDP CLI:
 
 ```sh
 cdp env live --key-file ./cdp-api-key.json
+```
 
+Request testnet USDC:
+
+```sh
 cdp evm faucet \
   address=0xPayerWalletAddress \
   network=base-sepolia \
   token=usdc
 ```
 
-Optional, but useful for general testnet troubleshooting:
+Optional testnet ETH, useful for troubleshooting:
 
 ```sh
 cdp evm faucet \
@@ -109,13 +153,13 @@ Check the payer balance:
 npm run balance -- 0xPayerWalletAddress
 ```
 
-Or, if `.env` contains `CLIENT_TEST_PK`, derive the payer address automatically:
+Or derive the payer address from `CLIENT_TEST_PK` in `.env`:
 
 ```sh
 npm run balance
 ```
 
-You want at least:
+Expected minimum:
 
 ```txt
 Base Sepolia USDC: 0.001
@@ -123,7 +167,7 @@ Base Sepolia USDC: 0.001
 
 ## Run locally
 
-Export `.env` before building and serving:
+Export `.env`, build, and serve:
 
 ```sh
 set -a
@@ -140,9 +184,7 @@ The local server is usually:
 http://127.0.0.1:7676
 ```
 
-Open the browser UI or use curl.
-
-## Test with curl
+## Verify with curl
 
 Health check:
 
@@ -156,7 +198,12 @@ Confirm the protected route is gated:
 curl -i http://127.0.0.1:7676/protected-route
 ```
 
-Expected: `402 Payment Required` with a `payment-required` header.
+Expected:
+
+```txt
+HTTP/1.1 402 Payment Required
+payment-required: <base64 challenge>
+```
 
 Run the paid flow:
 
@@ -164,7 +211,7 @@ Run the paid flow:
 curl -sS -X POST http://127.0.0.1:7676/api/fetch-protected-route | jq
 ```
 
-Expected success:
+Expected:
 
 ```json
 {
@@ -182,46 +229,34 @@ Expected success:
 }
 ```
 
-If the paid flow returns `402`, the payer probably has no Base Sepolia USDC, or `.env` points at a different payer key than the address you funded.
+If the paid flow returns `402`, check that the funded payer address matches the private key in `.env`.
+
+## Verify with the browser UI
+
+Open:
+
+```txt
+http://127.0.0.1:7676
+```
+
+Click **Fetch & Pay**.
+
+Expected: the UI displays the same successful JSON payload returned by the curl command.
 
 ## Decode the payment challenge
 
-To inspect the payment challenge from `/protected-route`:
+To inspect the challenge from `/protected-route`:
 
 ```sh
 HEADER=$(curl -is http://127.0.0.1:7676/protected-route | awk -F': ' 'tolower($1)=="payment-required" {print $2}' | tr -d '\r')
 npm run decode:payment-required -- "$HEADER"
 ```
 
-You should see the Base Sepolia network, the USDC asset, the payment amount, and the receiver `payTo` address.
-
-## Publish the repo to GitHub
-
-Using GitHub CLI:
-
-```sh
-git init
-git add .
-git commit -m "Initial Fastly Compute x402 demo"
-gh repo create fastly-x402-http-demo --public --source=. --remote=origin --push
-```
-
-Without GitHub CLI:
-
-```sh
-git init
-git add .
-git commit -m "Initial Fastly Compute x402 demo"
-git branch -M main
-git remote add origin git@github.com:<your-org-or-user>/fastly-x402-http-demo.git
-git push -u origin main
-```
-
-The included GitHub Actions workflow runs install, typecheck, and build with dummy values. It does not deploy and it does not require real wallet credentials.
+You should see the Base Sepolia network, USDC asset, payment amount, and receiver `payTo` address.
 
 ## Deploy to Fastly
 
-For the local demo flow, export `.env` before publishing so the same environment variables used locally are available to the build command:
+For the demo flow, export `.env` before publishing so the build receives the same values used locally:
 
 ```sh
 set -a
@@ -231,13 +266,13 @@ set +a
 fastly compute publish --accept-defaults
 ```
 
-You can also run:
+Or:
 
 ```sh
 npm run deploy
 ```
 
-For anything beyond a demo, do not bake a long-lived payer private key into the Compute package. Use a separate signer, secret management flow, or service-side payment architecture appropriate for your environment.
+For production, do not bake a long-lived payer private key into the Compute package. Use a dedicated signer, secret management flow, or payment-provider architecture appropriate for your use case.
 
 ## Troubleshooting
 
@@ -249,9 +284,27 @@ Set `SERVER_ADDRESS` to a valid `0x...` address, export `.env`, and restart `fas
 
 Set `CLIENT_TEST_PK` to a test private key beginning with `0x`. Never use a production key.
 
+### `Buffer is not defined`
+
+The x402 dependency path expects a Node-style `Buffer` global. Fastly Compute is not Node, so this repo provides a small compatibility shim through `src/entry.ts` and `src/polyfills.ts`.
+
+If you see this error, confirm the build script points at `src/entry.ts`, not `src/index.ts`:
+
+```json
+"build": "mkdir -p bin && js-compute-runtime --env SERVER_ADDRESS,CLIENT_TEST_PK,X402_FACILITATOR_URL,EVM_RPC_URL src/entry.ts bin/main.wasm"
+```
+
+Then rebuild:
+
+```sh
+rm -rf bin pkg
+npm run build
+fastly compute serve
+```
+
 ### Direct `/protected-route` returns 500 instead of 402
 
-Make sure:
+Confirm:
 
 ```env
 X402_FACILITATOR_URL=https://www.x402.org/facilitator
@@ -259,15 +312,43 @@ X402_FACILITATOR_URL=https://www.x402.org/facilitator
 
 Then rebuild and restart.
 
+A `500` is acceptable while debugging if the x402 middleware cannot initialize or verify. It should fail closed and not serve protected content. A direct unauthenticated request to `/protected-route` should never return `200`.
+
+### Direct `/protected-route` returns 200
+
+This means the paywall is failing open. Do not use the demo until fixed.
+
+Expected direct behavior:
+
+```txt
+HTTP/1.1 402 Payment Required
+```
+
+or, during middleware failure:
+
+```txt
+HTTP/1.1 500 Internal Server Error
+```
+
+Unexpected behavior:
+
+```txt
+HTTP/1.1 200 OK
+```
+
 ### Paid flow returns 402
 
-The x402 challenge is working, but the payer did not complete payment. Check that the funded payer address matches the private key in `.env`:
+The payer did not complete payment. Check that the funded payer address matches `CLIENT_TEST_PK`:
 
 ```sh
 npm run balance
 ```
 
-### npm tries to fetch from an internal or stale registry
+### Browser UI fails but curl succeeds
+
+The UI calls `POST /api/fetch-protected-route`. Check the browser console, response body, and whether `/client.js` loaded successfully.
+
+### npm uses the wrong registry
 
 This repo includes `.npmrc` with the public npm registry. If needed:
 
@@ -278,4 +359,4 @@ npm install --registry=https://registry.npmjs.org/
 
 ## Security notes
 
-This is a testnet demo. The `CLIENT_TEST_PK` model is intentionally simple so the payment flow is easy to demonstrate end to end. For production, avoid embedding payer keys in a public repo or deploy artifact.
+This is a testnet demo. `CLIENT_TEST_PK` is intentionally simple so the x402 flow is easy to prove end to end. For production, avoid embedding payer keys in a public repo or deploy artifact.
