@@ -44,6 +44,28 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function cloneableJsonResponse(body: unknown, status = 200): Response {
+  const text = JSON.stringify(body, null, 2);
+  const init: ResponseInit = {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  };
+
+  const makeResponse = () => new Response(text, init);
+  const response = makeResponse();
+
+  Object.defineProperty(response, "clone", {
+    value: makeResponse,
+    writable: true,
+    configurable: true
+  });
+
+  return response;
+}
+
 function textResponse(body: string, contentType: string): Response {
   return new Response(body, {
     headers: {
@@ -198,7 +220,7 @@ function createProtectedRoutePaymentMiddleware(server: ReturnType<typeof createR
   );
 }
 
-const app = new Hono();
+export const app = new Hono();
 
 app.onError((error) => {
   console.error("Unhandled app error", error);
@@ -234,36 +256,56 @@ app.post("/api/fetch-protected-route", async (c) => fetchProtectedRouteWithPayme
 
 app.use("/protected-route", async (c, next) => {
   try {
+    (c as any).set("x402Verified", false);
+
     const server = await getInitializedResourceServer();
     const protectedRoutePaymentMiddleware = createProtectedRoutePaymentMiddleware(server);
-    return await protectedRoutePaymentMiddleware(c, next);
+
+    const guardedNext = async () => {
+      (c as any).set("x402Verified", true);
+      await next();
+    };
+
+    return await protectedRoutePaymentMiddleware(c, guardedNext);
   } catch (error) {
     console.error("x402 middleware error", error);
-    return jsonResponse(
+
+    const res = jsonResponse(
       {
         ok: false,
+        paid: false,
         error: error instanceof Error ? error.message : String(error),
-        hint: "Use X402_FACILITATOR_URL=https://www.x402.org/facilitator and fund CLIENT_TEST_PK with Base Sepolia USDC."
+        hint: "x402 middleware failed. Protected content was not served."
       },
       500
     );
+
+    c.res = res;
+    return res;
   }
 });
 
-app.get("/protected-route", (c) =>
-  c.json({
+app.get("/protected-route", (c) => {
+  if ((c as any).get("x402Verified") !== true) {
+    return jsonResponse(
+      {
+        ok: false,
+        paid: false,
+        error: "Payment was not verified. Protected content was not served."
+      },
+      402
+    );
+  }
+
+  return cloneableJsonResponse({
     message: "This content is behind an x402 paywall. Thanks for paying!",
     servedBy: "Fastly Compute",
     paid: true,
     timestamp: new Date().toISOString()
-  })
-);
+  });
+});
 
 app.notFound(() => jsonResponse({ ok: false, error: "Not found" }, 404));
-
-addEventListener("fetch", (event) => {
-  event.respondWith(app.fetch(event.request));
-});
 
 const INDEX_HTML = `<!doctype html>
 <html lang="en">

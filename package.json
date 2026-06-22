@@ -5,7 +5,7 @@
   "private": false,
   "type": "module",
   "scripts": {
-    "build": "mkdir -p bin && js-compute-runtime --env SERVER_ADDRESS,CLIENT_TEST_PK,X402_FACILITATOR_URL,EVM_RPC_URL src/index.ts bin/main.wasm",
+    "build": "mkdir -p bin && js-compute-runtime --env SERVER_ADDRESS,CLIENT_TEST_PK,X402_FACILITATOR_URL,EVM_RPC_URL src/entry.ts bin/main.wasm",
     "start": "fastly compute serve",
     "dev": "fastly compute serve",
     "deploy": "fastly compute publish --accept-defaults",
@@ -29,6 +29,7 @@
     "@x402/evm": "^2.14.0",
     "@x402/fetch": "^2.14.0",
     "@x402/hono": "^2.14.0",
+    "buffer": "^6.0.3",
     "hono": "^4.12.25",
     "url": "^0.11.4",
     "viem": "^2.52.2"
