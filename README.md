@@ -10,7 +10,7 @@ Fastly Compute demo that protects an HTTP endpoint with an x402 payment challeng
 - x402 `402 Payment Required` challenge generation.
 - Signed payment retry through `@x402/fetch`.
 - Server-side payment verification through an x402 facilitator.
-- A browser UI that exercises the same paid endpoint as the curl test.
+- A browser UI that exercises both the unpaid 402 response and the paid endpoint.
 
 ## Verification status
 
@@ -35,14 +35,11 @@ Use curl as the easiest way to inspect the raw 402 challenge and paid response. 
 │   └── generate-wallets.mjs
 ├── src/
 │   ├── entry.ts
-│   ├── index.ts
-│   └── polyfills.ts
+│   └── index.ts
 └── tsconfig.json
 ```
 
-`src/entry.ts` is the Compute entrypoint. It loads runtime compatibility shims before importing the app.
-
-`src/polyfills.ts` provides the small compatibility shim needed by npm dependencies that expect `Buffer`. This does not make Fastly Compute a Node.js runtime. The service still runs on Fastly Compute, and the shim only supplies the specific global expected by the x402 dependency path.
+`src/entry.ts` is the Compute entrypoint. It installs the small runtime compatibility shim needed by npm dependencies that expect `Buffer`. This does not make Fastly Compute a Node.js runtime. The service still runs on Fastly Compute, and the shim only supplies the specific global expected by the x402 dependency path.
 
 `src/index.ts` contains the Hono app, routes, x402 middleware, and browser UI assets.
 
@@ -239,7 +236,9 @@ Open:
 http://127.0.0.1:7676
 ```
 
-Click **Fetch & Pay**.
+Click **Show 402** to display the unpaid `402 Payment Required` response from `GET /protected-route`.
+
+Click **Fetch & Pay** to run the paid flow.
 
 Expected: the UI displays the same successful JSON payload returned by the curl command.
 
@@ -286,7 +285,7 @@ Set `CLIENT_TEST_PK` to a test private key beginning with `0x`. Never use a prod
 
 ### `Buffer is not defined`
 
-The x402 dependency path expects a Node-style `Buffer` global. Fastly Compute is not Node, so this repo provides a small compatibility shim through `src/entry.ts` and `src/polyfills.ts`.
+The x402 dependency path expects a Node-style `Buffer` global. Fastly Compute is not Node, so this repo provides a small compatibility shim through `src/entry.ts`.
 
 If you see this error, confirm the build script points at `src/entry.ts`, not `src/index.ts`:
 
@@ -346,7 +345,7 @@ npm run balance
 
 ### Browser UI fails but curl succeeds
 
-The UI calls `POST /api/fetch-protected-route`. Check the browser console, response body, and whether `/client.js` loaded successfully.
+The UI calls `POST /api/fetch-protected-route` for the paid flow and directly calls `GET /protected-route` for the unpaid 402 response. Check the browser console, response body, and whether `/client.js` loaded successfully.
 
 ### npm uses the wrong registry
 

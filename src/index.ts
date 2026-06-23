@@ -358,6 +358,7 @@ const INDEX_HTML = `<!doctype html>
           <p>Press the button to fetch the route through the x402 payment flow.</p>
           <div class="actions">
             <button id="fetch" class="primary" type="button">Fetch &amp; Pay</button>
+            <button id="challenge" class="secondary" type="button">Show 402</button>
             <button id="clear" class="secondary" type="button">Clear</button>
           </div>
         </section>
@@ -483,6 +484,7 @@ footer { color: var(--muted); text-align: center; padding: 1rem; border-top: 1px
 
 const CLIENT_JS = `const results = document.querySelector("#results");
 const fetchButton = document.querySelector("#fetch");
+const challengeButton = document.querySelector("#challenge");
 const clearButton = document.querySelector("#clear");
 const themeButton = document.querySelector("#theme");
 
@@ -521,6 +523,36 @@ fetchButton.addEventListener("click", async () => {
   } finally {
     fetchButton.disabled = false;
     fetchButton.textContent = "Fetch & Pay";
+  }
+});
+
+challengeButton.addEventListener("click", async () => {
+  challengeButton.disabled = true;
+  challengeButton.textContent = "Fetching...";
+
+  const startedAt = new Date();
+  try {
+    const res = await fetch("/protected-route", {
+      method: "GET",
+      headers: {
+        accept: "application/json"
+      }
+    });
+    const text = await res.text();
+    let body = text;
+    try { body = JSON.parse(text); } catch {}
+    const payload = JSON.stringify({
+      status: res.status,
+      statusText: res.statusText,
+      paymentRequired: res.headers.get("payment-required"),
+      body
+    }, null, 2);
+    addResult(res.ok, res.status, startedAt, payload);
+  } catch (error) {
+    addResult(false, "network", startedAt, error instanceof Error ? error.message : String(error));
+  } finally {
+    challengeButton.disabled = false;
+    challengeButton.textContent = "Show 402";
   }
 });
 
